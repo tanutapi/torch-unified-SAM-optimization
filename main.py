@@ -25,7 +25,7 @@ def main(args):
     save_dir = f"src/save/{sam_dir}"
     saved_args_path = save_method_aware_args(args, dataset, save_dir=save_dir, include_derived=True)
 
-    log_file_name = f"{sam_dir}_{args.arch_type}_{args.dataset}.log"
+    log_file_name = f"{sam_dir}_{args.optimizer}_{args.arch_type}_{args.dataset}.log"
     os.makedirs(f"src/save/{sam_dir}/log/", exist_ok=True)
 
     logger = setup_logger(
@@ -128,7 +128,7 @@ if __name__ == "__main__":
 
     sam_dir = args.sam_type if args.sam_type is not None else "standard"
     os.makedirs(f"src/save/{sam_dir}", exist_ok=True)
-    args_path = f"src/save/{sam_dir}/arguments.json"
+    args_path = f"src/save/{sam_dir}/{args.optimizer}_arguments.json"
     with open(args_path, "w", encoding="utf-8") as fh:
         json.dump(vars(args), fh, indent=2, sort_keys=True, default=str)
 

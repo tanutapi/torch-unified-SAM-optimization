@@ -40,9 +40,9 @@ def parse_log(path: str) -> dict:
             "te_loss": te_loss, "te_acc": te_acc}
 
 
-def find_log(sam_type: str, arch_type: str, dataset: str) -> str:
+def find_log(sam_type: str, optimizer: str, arch_type: str, dataset: str) -> str:
     sam_dir = sam_type if sam_type.lower() not in ("none", "standard", "") else "standard"
-    path = os.path.join("src", "save", sam_dir, "log", f"{sam_dir}_{arch_type}_{dataset}.log")
+    path = os.path.join("src", "save", sam_dir, "log", f"{sam_dir}_{optimizer}_{arch_type}_{dataset}.log")
     return path
 
 
@@ -50,6 +50,8 @@ def main():
     parser = argparse.ArgumentParser(description="Plot SAM training results.")
     parser.add_argument("sam_types", type=str,
                         help="Comma-separated SAM variant names, e.g. SAM,ESAM,none")
+    parser.add_argument("--optimizer", default="sgd",
+                        help="Base optimizer used during training, e.g. sgd, adam, adamw")
     parser.add_argument("--arch_type", required=True,
                         help="Model architecture, e.g. wideresnet28")
     parser.add_argument("--dataset", required=True,
@@ -63,7 +65,7 @@ def main():
     # Load data
     data = {}
     for v in variants:
-        log_path = find_log(v, args.arch_type, args.dataset)
+        log_path = find_log(v, args.optimizer, args.arch_type, args.dataset)
         if not os.path.exists(log_path):
             print(f"[warning] log not found: {log_path}", file=sys.stderr)
             continue

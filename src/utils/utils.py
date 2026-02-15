@@ -155,7 +155,7 @@ def save_method_aware_args(args, dataset, save_dir: str, include_derived=True):
     )
 
     os.makedirs(save_dir, exist_ok=True)
-    path = os.path.join(save_dir, f"{args.dataset}_training_arguments.json")
+    path = os.path.join(save_dir, f"{args.dataset}_{args.optimizer}_training_arguments.json")
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(to_save, fh, indent=2, sort_keys=True, default=str)
 
