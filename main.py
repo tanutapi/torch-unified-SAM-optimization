@@ -128,7 +128,7 @@ if __name__ == "__main__":
 
     sam_dir = args.sam_type if args.sam_type is not None else "standard"
     os.makedirs(f"src/save/{sam_dir}", exist_ok=True)
-    args_path = f"src/save/{sam_dir}/{args.optimizer}_arguments.json"
+    args_path = f"src/save/{sam_dir}/{sam_dir}_{args.optimizer}_arguments.json"
     with open(args_path, "w", encoding="utf-8") as fh:
         json.dump(vars(args), fh, indent=2, sort_keys=True, default=str)
 
