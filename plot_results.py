@@ -1,10 +1,15 @@
 """
-Plot training results from log files in src/save/{sam_type}/log/.
+Plot training results from log files.
 
 Usage:
-    python plot_results.py SAM,ESAM,FisherSAM --arch_type wideresnet28 --dataset cifar10
-    python plot_results.py SAM,none            --arch_type resnet18     --dataset cifar100
-    python plot_results.py SAM                 --arch_type resnet18     --dataset cifar10 --output results.png
+    python plot_results.py path/to/SAM_sgd_resnet18_cifar10.log path/to/ESAM_sgd_resnet18_cifar10.log
+    python plot_results.py src/save/*/log/*_wideresnet28_cifar10.log --output results.png
+    python plot_results.py src/save/SAM/log/*.log --title "SAM experiments"
+
+Log filenames are expected to follow the pattern:
+    {sam_type}_{optimizer}_{arch_type}_{dataset}.log
+The approach label is derived as "{sam_type} ({optimizer})", or "SGD (no SAM)" for
+sam_type "none".
 """
 
 import argparse
@@ -24,6 +29,10 @@ LOG_PATTERN = re.compile(
     r"\s*Test Acc:\s*([\d.]+)%"
 )
 
+FILENAME_PATTERN = re.compile(
+    r"^(?P<sam_type>[^_]+)_(?P<optimizer>[^_]+)_(?P<arch_type>.+)_(?P<dataset>[^_]+)$"
+)
+
 
 def parse_log(path: str) -> dict:
     epochs, tr_loss, tr_acc, te_loss, te_acc = [], [], [], [], []
@@ -40,32 +49,31 @@ def parse_log(path: str) -> dict:
             "te_loss": te_loss, "te_acc": te_acc}
 
 
-def find_log(sam_type: str, optimizer: str, arch_type: str, dataset: str) -> str:
-    sam_dir = sam_type if sam_type.lower() not in ("none", "standard", "") else "standard"
-    path = os.path.join("src", "save", sam_dir, "log", f"{sam_dir}_{optimizer}_{arch_type}_{dataset}.log")
-    return path
+def label_from_filename(path: str) -> str:
+    stem = os.path.splitext(os.path.basename(path))[0]
+    m = FILENAME_PATTERN.match(stem)
+    if not m:
+        return stem
+    sam_type = m.group("sam_type")
+    optimizer = m.group("optimizer")
+    if sam_type.lower() in ("none", "standard"):
+        return f"{optimizer.upper()} (no SAM)"
+    return f"{sam_type} ({optimizer})"
 
 
 def main():
     parser = argparse.ArgumentParser(description="Plot SAM training results.")
-    parser.add_argument("sam_types", type=str,
-                        help="Comma-separated SAM variant names, e.g. SAM,ESAM,none")
-    parser.add_argument("--optimizer", default="sgd",
-                        help="Base optimizer used during training, e.g. sgd, adam, adamw")
-    parser.add_argument("--arch_type", required=True,
-                        help="Model architecture, e.g. wideresnet28")
-    parser.add_argument("--dataset", required=True,
-                        help="Dataset name, e.g. cifar10")
+    parser.add_argument("log_files", nargs="+",
+                        help="One or more log file paths (shell globs work)")
+    parser.add_argument("--title", default=None,
+                        help="Custom figure title (default: auto-detected from filenames)")
     parser.add_argument("--output", default=None,
                         help="Save figure to this path instead of showing interactively")
     args = parser.parse_args()
 
-    variants = [v.strip() for v in args.sam_types.split(",") if v.strip()]
-
     # Load data
     data = {}
-    for v in variants:
-        log_path = find_log(v, args.optimizer, args.arch_type, args.dataset)
+    for log_path in args.log_files:
         if not os.path.exists(log_path):
             print(f"[warning] log not found: {log_path}", file=sys.stderr)
             continue
@@ -73,18 +81,28 @@ def main():
         if not parsed["epochs"]:
             print(f"[warning] no data parsed from: {log_path}", file=sys.stderr)
             continue
-        data[v] = parsed
+        label = label_from_filename(log_path)
+        data[label] = parsed
 
     if not data:
         print("No data loaded. Exiting.", file=sys.stderr)
         sys.exit(1)
 
+    # Auto-detect title from filenames if not provided
+    if args.title:
+        title = args.title
+    else:
+        stems = [os.path.splitext(os.path.basename(p))[0] for p in args.log_files]
+        parts = [FILENAME_PATTERN.match(s) for s in stems]
+        arch_types = {m.group("arch_type") for m in parts if m}
+        datasets = {m.group("dataset") for m in parts if m}
+        arch_str = ", ".join(sorted(arch_types)) if arch_types else "unknown"
+        data_str = ", ".join(sorted(datasets)) if datasets else "unknown"
+        title = f"Training Results — {arch_str} on {data_str}"
+
     # Plot
     fig = plt.figure(figsize=(14, 10))
-    fig.suptitle(
-        f"Training Results — {args.arch_type} on {args.dataset}",
-        fontsize=14, fontweight="bold", y=0.98,
-    )
+    fig.suptitle(title, fontsize=14, fontweight="bold", y=0.98)
     gs = gridspec.GridSpec(2, 2, hspace=0.35, wspace=0.3)
     axes = {
         "tr_loss": fig.add_subplot(gs[0, 0]),
@@ -100,8 +118,7 @@ def main():
         "te_acc":  "Validation Accuracy (%)",
     }
 
-    for variant, d in data.items():
-        label = variant if variant.lower() not in ("none", "standard") else "SGD (no SAM)"
+    for label, d in data.items():
         for key, ax in axes.items():
             ax.plot(d["epochs"], d[key], label=label, linewidth=1.5)
 
