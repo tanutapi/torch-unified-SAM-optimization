@@ -21,6 +21,8 @@ def main(args):
     optimizer, scheduler, training_type, use_sam, sam_lower = build_optimizer_and_scheduler(args, model, dataset)
 
     sam_dir = args.sam_type if args.sam_type is not None else "standard"
+    if args.adaptive:
+        sam_dir = f"Adaptive_{sam_dir}"
 
     save_dir = f"src/save/{sam_dir}"
     saved_args_path = save_method_aware_args(args, dataset, save_dir=save_dir, include_derived=True)
@@ -127,6 +129,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     sam_dir = args.sam_type if args.sam_type is not None else "standard"
+    if args.adaptive:
+        sam_dir = f"Adaptive_{sam_dir}"
     os.makedirs(f"src/save/{sam_dir}", exist_ok=True)
     args_path = f"src/save/{sam_dir}/{sam_dir}_{args.optimizer}_arguments.json"
     with open(args_path, "w", encoding="utf-8") as fh:
