@@ -53,6 +53,8 @@ def build_base_optimizer(args):
     if args.optimizer.lower() == "sgd":
         base_opt_cls = torch.optim.SGD
         optimizer_kwargs["momentum"] = args.momentum
+    elif args.optimizer.lower() == "adamw":
+        base_opt_cls = torch.optim.AdamW
     else:
         base_opt_cls = torch.optim.Adam
     return base_opt_cls, optimizer_kwargs

@@ -21,11 +21,13 @@ def main(args):
     optimizer, scheduler, training_type, use_sam, sam_lower = build_optimizer_and_scheduler(args, model, dataset)
 
     sam_dir = args.sam_type if args.sam_type is not None else "standard"
+    if args.adaptive:
+        sam_dir = f"Adaptive_{sam_dir}"
 
     save_dir = f"src/save/{sam_dir}"
     saved_args_path = save_method_aware_args(args, dataset, save_dir=save_dir, include_derived=True)
 
-    log_file_name = f"{sam_dir}_{args.arch_type}_{args.dataset}.log"
+    log_file_name = f"{sam_dir}_{args.optimizer}_{args.arch_type}_{args.dataset}.log"
     os.makedirs(f"src/save/{sam_dir}/log/", exist_ok=True)
 
     logger = setup_logger(
@@ -101,7 +103,7 @@ if __name__ == "__main__":
     parser.add_argument("--label_smoothing", default=0.1, type=float, help="Label smoothing factor used in CrossEntropyLoss (0.0 disables label smoothing).")
 
     # --- Optimizer ---
-    parser.add_argument("--optimizer", default="sgd", type=str, choices=["adam", "sgd"], help="Base optimizer to use.")
+    parser.add_argument("--optimizer", default="sgd", type=str, choices=["adam", "adamw", "sgd"], help="Base optimizer to use.")
     parser.add_argument("--lr", default=1e-2, type=float, help="Learning rate for the base optimizer.")
     parser.add_argument("--momentum", default=0.9, type=float, help="Momentum for SGD (ignored for Adam).")
     parser.add_argument("--weight_decay", default=5e-4, type=float, help="Weight decay (L2 regularization) for the base optimizer.")
@@ -127,8 +129,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     sam_dir = args.sam_type if args.sam_type is not None else "standard"
+    if args.adaptive:
+        sam_dir = f"Adaptive_{sam_dir}"
     os.makedirs(f"src/save/{sam_dir}", exist_ok=True)
-    args_path = f"src/save/{sam_dir}/arguments.json"
+    args_path = f"src/save/{sam_dir}/{sam_dir}_{args.optimizer}_arguments.json"
     with open(args_path, "w", encoding="utf-8") as fh:
         json.dump(vars(args), fh, indent=2, sort_keys=True, default=str)
 
