@@ -30,7 +30,8 @@ LOG_PATTERN = re.compile(
 )
 
 FILENAME_PATTERN = re.compile(
-    r"^(?P<sam_type>[^_]+)_(?P<optimizer>[^_]+)_(?P<arch_type>.+)_(?P<dataset>[^_]+)$"
+    r"^(?P<sam_type>.+?)_(?P<optimizer>sgd|adam|adamw)_(?P<arch_type>.+)_(?P<dataset>[^_]+)$",
+    re.IGNORECASE,
 )
 
 
