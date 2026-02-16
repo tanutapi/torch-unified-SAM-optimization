@@ -156,6 +156,8 @@ def save_method_aware_args(args, dataset, save_dir: str, include_derived=True):
 
     os.makedirs(save_dir, exist_ok=True)
     sam_dir = args.sam_type if args.sam_type is not None else "standard"
+    if getattr(args, "adaptive", False):
+        sam_dir = f"Adaptive_{sam_dir}"
     path = os.path.join(save_dir, f"{sam_dir}_{args.optimizer}_{args.dataset}_training_arguments.json")
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(to_save, fh, indent=2, sort_keys=True, default=str)
