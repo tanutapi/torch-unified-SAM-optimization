@@ -7,9 +7,9 @@ Usage:
     python plot_results.py src/save/SAM/log/*.log --title "SAM experiments"
 
 Log filenames are expected to follow the pattern:
-    {sam_type}_{optimizer}_{arch_type}_{dataset}.log
-The approach label is derived as "{sam_type} ({optimizer})", or "SGD (no SAM)" for
-sam_type "none".
+    [Adaptive_]{sam_type}_{optimizer}_{arch_type}_{dataset}.log
+The approach label is derived as "[Adaptive ]{sam_type} ({optimizer})", or "SGD (no SAM)"
+for sam_type "none".
 """
 
 import argparse
@@ -30,7 +30,7 @@ LOG_PATTERN = re.compile(
 )
 
 FILENAME_PATTERN = re.compile(
-    r"^(?P<sam_type>[^_]+)_(?P<optimizer>[^_]+)_(?P<arch_type>.+)_(?P<dataset>[^_]+)$"
+    r"^(?P<adaptive>Adaptive_)?(?P<sam_type>[^_]+)_(?P<optimizer>[^_]+)_(?P<arch_type>.+)_(?P<dataset>[^_]+)$"
 )
 
 
@@ -54,11 +54,13 @@ def label_from_filename(path: str) -> str:
     m = FILENAME_PATTERN.match(stem)
     if not m:
         return stem
+    adaptive = m.group("adaptive")  # "Adaptive_" or None
     sam_type = m.group("sam_type")
     optimizer = m.group("optimizer")
     if sam_type.lower() in ("none", "standard"):
         return f"{optimizer.upper()} (no SAM)"
-    return f"{sam_type} ({optimizer})"
+    prefix = "Adaptive " if adaptive else ""
+    return f"{prefix}{sam_type} ({optimizer})"
 
 
 def main():
