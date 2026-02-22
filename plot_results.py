@@ -17,6 +17,8 @@ import re
 import os
 import sys
 
+import itertools
+
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
@@ -63,6 +65,47 @@ def label_from_filename(path: str) -> str:
     return f"{prefix}{sam_type} ({optimizer})"
 
 
+def print_summary_table(data: dict, latex: bool = False) -> None:
+    rows = [
+        (label, d["te_acc"][-1], d["te_loss"][-1], d["epochs"][-1])
+        for label, d in data.items()
+    ]
+    best_acc  = max(r[1] for r in rows)
+    best_loss = min(r[2] for r in rows)
+    col_w = max(len(r[0]) for r in rows)
+
+    BOLD  = "\033[1m"
+    RESET = "\033[0m"
+
+    header = f"{'Method':<{col_w}}  {'Val Acc (%)':>12}  {'Val Loss':>10}  {'Epoch':>6}"
+    sep = "-" * len(header)
+    print("\n" + sep)
+    print(header)
+    print(sep)
+    for label, acc, loss, epoch in rows:
+        acc_str  = f"{acc:12.2f}"
+        loss_str = f"{loss:10.4f}"
+        if acc  == best_acc:
+            acc_str  = BOLD + acc_str  + RESET
+        if loss == best_loss:
+            loss_str = BOLD + loss_str + RESET
+        print(f"{label:<{col_w}}  {acc_str}  {loss_str}  {epoch:>6d}")
+    print(sep + "\n")
+
+    if latex:
+        print("% LaTeX table (requires \\usepackage{booktabs})")
+        print(r"\begin{tabular}{lrrr}")
+        print(r"\toprule")
+        print(r"Method & Val Acc (\%) & Val Loss & Epoch \\")
+        print(r"\midrule")
+        for label, acc, loss, epoch in rows:
+            acc_str  = f"\\textbf{{{acc:.2f}}}" if acc  == best_acc  else f"{acc:.2f}"
+            loss_str = f"\\textbf{{{loss:.4f}}}" if loss == best_loss else f"{loss:.4f}"
+            print(f"{label} & {acc_str} & {loss_str} & {epoch} \\\\")
+        print(r"\bottomrule")
+        print(r"\end{tabular}" + "\n")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Plot SAM training results.")
     parser.add_argument("log_files", nargs="+",
@@ -71,7 +114,13 @@ def main():
                         help="Custom figure title (default: auto-detected from filenames)")
     parser.add_argument("--output", default=None,
                         help="Save figure to this path instead of showing interactively")
+    parser.add_argument("--table", action="store_true",
+                        help="Print a summary table of last-epoch validation metrics")
+    parser.add_argument("--latex", action="store_true",
+                        help="Also print the summary table as LaTeX (implies --table)")
     args = parser.parse_args()
+    if args.latex:
+        args.table = True
 
     # Load data
     data = {}
@@ -89,6 +138,25 @@ def main():
     if not data:
         print("No data loaded. Exiting.", file=sys.stderr)
         sys.exit(1)
+
+    # Sort labels into preferred display order; unknown labels go at the end.
+    LABEL_ORDER = [
+        "SGD (no SAM)",
+        "ADAM (no SAM)",
+        "ADAMW (no SAM)",
+        "SAM (sgd)",
+        "SAM (adam)",
+        "SAM (adamw)",
+        "Adaptive SAM (sgd)",
+        "Adaptive SAM (adam)",
+        "Adaptive SAM (adamw)",
+    ]
+    def _sort_key(label):
+        try:
+            return LABEL_ORDER.index(label)
+        except ValueError:
+            return len(LABEL_ORDER)
+    data = dict(sorted(data.items(), key=lambda kv: _sort_key(kv[0])))
 
     # Auto-detect title from filenames if not provided
     if args.title:
@@ -120,15 +188,23 @@ def main():
         "te_acc":  "Validation Accuracy (%)",
     }
 
+    linestyles = ["-", "--", "-.", ":"]
+    style_cycle = itertools.cycle(linestyles)
+    label_styles = {label: next(style_cycle) for label in data}
+
     for label, d in data.items():
+        ls = label_styles[label]
         for key, ax in axes.items():
-            ax.plot(d["epochs"], d[key], label=label, linewidth=1.5)
+            ax.plot(d["epochs"], d[key], label=label, linewidth=1.5, linestyle=ls)
 
     for key, ax in axes.items():
         ax.set_title(titles[key], fontsize=11)
         ax.set_xlabel("Epoch")
         ax.grid(True, linestyle="--", alpha=0.5)
         ax.legend(fontsize=8)
+
+    if args.table:
+        print_summary_table(data, latex=args.latex)
 
     if args.output:
         plt.savefig(args.output, dpi=150, bbox_inches="tight")
