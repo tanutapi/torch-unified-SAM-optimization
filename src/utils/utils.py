@@ -107,7 +107,7 @@ def collect_method_aware_args(args, dataset, sam_variant_cls=None, sam_key=None,
         "sam_type", "adaptive",
     }
 
-    if args_dict.get("optimizer", "").lower() == "sgd":
+    if args_dict.get("optimizer", "").lower() in ("sgd", "sgd8bit"):
         common_keys.add("momentum")
 
     keys = set(common_keys)

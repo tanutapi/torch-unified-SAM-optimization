@@ -103,7 +103,7 @@ if __name__ == "__main__":
     parser.add_argument("--label_smoothing", default=0.1, type=float, help="Label smoothing factor used in CrossEntropyLoss (0.0 disables label smoothing).")
 
     # --- Optimizer ---
-    parser.add_argument("--optimizer", default="sgd", type=str, choices=["adam", "adamw", "sgd"], help="Base optimizer to use.")
+    parser.add_argument("--optimizer", default="sgd", type=str, choices=["adam", "adamw", "sgd", "adam8bit", "adamw8bit", "sgd8bit"], help="Base optimizer to use.")
     parser.add_argument("--lr", default=1e-2, type=float, help="Learning rate for the base optimizer.")
     parser.add_argument("--momentum", default=0.9, type=float, help="Momentum for SGD (ignored for Adam).")
     parser.add_argument("--weight_decay", default=5e-4, type=float, help="Weight decay (L2 regularization) for the base optimizer.")

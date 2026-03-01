@@ -50,13 +50,28 @@ def build_model(args, num_classes: int, device: torch.device):
 
 def build_base_optimizer(args):
     optimizer_kwargs = {"lr": args.lr, "weight_decay": args.weight_decay}
-    if args.optimizer.lower() == "sgd":
+    opt = args.optimizer.lower()
+
+    if opt == "sgd":
         base_opt_cls = torch.optim.SGD
         optimizer_kwargs["momentum"] = args.momentum
-    elif args.optimizer.lower() == "adamw":
+    elif opt == "adamw":
         base_opt_cls = torch.optim.AdamW
+    elif opt == "adam":
+        base_opt_cls = torch.optim.Adam
+    elif opt == "adam8bit":
+        import bitsandbytes as bnb
+        base_opt_cls = bnb.optim.Adam8bit
+    elif opt == "adamw8bit":
+        import bitsandbytes as bnb
+        base_opt_cls = bnb.optim.AdamW8bit
+    elif opt == "sgd8bit":
+        import bitsandbytes as bnb
+        base_opt_cls = bnb.optim.SGD8bit
+        optimizer_kwargs["momentum"] = args.momentum
     else:
         base_opt_cls = torch.optim.Adam
+
     return base_opt_cls, optimizer_kwargs
 
 
