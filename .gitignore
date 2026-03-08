@@ -134,3 +134,5 @@ save/
 cifar-100-python
 cifar-10-batches-py
 *.sh
+progress-report.md
+*.zip

@@ -8,7 +8,7 @@ Usage:
 
 Log filenames are expected to follow the pattern:
     [Adaptive_]{sam_type}_{optimizer}_{arch_type}_{dataset}.log
-The approach label is derived as "[Adaptive ]{sam_type} ({optimizer})", or "SGD (no SAM)"
+The approach label is derived as "[ASAM|SAM] {opt_name}[ 8Bits]", or just "{opt_name}[ 8Bits]"
 for sam_type "none".
 """
 
@@ -16,8 +16,8 @@ import argparse
 import re
 import os
 import sys
-
 import itertools
+from collections import defaultdict
 
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
@@ -34,6 +34,27 @@ LOG_PATTERN = re.compile(
 FILENAME_PATTERN = re.compile(
     r"^(?P<adaptive>Adaptive_)?(?P<sam_type>[^_]+)_(?P<optimizer>[^_]+)_(?P<arch_type>.+)_(?P<dataset>[^_]+)$"
 )
+
+# Display name for each base optimizer
+OPT_DISPLAY = {"sgd": "SGD", "adam": "Adam", "adamw": "AdamW"}
+
+# Full name and short name for table section headers
+OPTIMIZER_DISPLAY = {
+    "sgd":   ("Stochastic Gradient Descent Optimizer", "SGD"),
+    "adam":  ("Adaptive Moment Estimation Optimizer", "Adam"),
+    "adamw": ("Adam with Weight Decay", "AdamW"),
+}
+
+# Column definitions: (sam_key, is_8bit, label_template)
+# sam_key: "none" | "sam" | "asam"
+COLUMN_DEFS = [
+    ("none", False, "{opt}"),
+    ("sam",  False, "{opt} SAM"),
+    ("asam", False, "{opt} ASAM"),
+    ("none", True,  "{opt} 8Bits"),
+    ("sam",  True,  "{opt} SAM 8Bits"),
+    ("asam", True,  "{opt} ASAM 8Bits"),
+]
 
 
 def parse_log(path: str) -> dict:
@@ -56,54 +77,173 @@ def label_from_filename(path: str) -> str:
     m = FILENAME_PATTERN.match(stem)
     if not m:
         return stem
-    adaptive = m.group("adaptive")  # "Adaptive_" or None
+    adaptive = m.group("adaptive")
     sam_type = m.group("sam_type")
-    optimizer = m.group("optimizer")
+    optimizer = m.group("optimizer").lower()
+    is_8bit = optimizer.endswith("8bit")
+    base_opt = optimizer[:-4] if is_8bit else optimizer
+    opt_name = OPT_DISPLAY.get(base_opt, base_opt.upper())
+    suffix = " 8Bits" if is_8bit else ""
     if sam_type.lower() in ("none", "standard"):
-        return f"{optimizer.upper()} (no SAM)"
-    prefix = "Adaptive " if adaptive else ""
-    return f"{prefix}{sam_type} ({optimizer})"
+        return f"{opt_name}{suffix}"
+    sam_prefix = "ASAM" if adaptive else "SAM"
+    return f"{opt_name} {sam_prefix}{suffix}"
 
 
-def print_summary_table(data: dict, latex: bool = False) -> None:
-    rows = [
-        (label, d["te_acc"][-1], d["te_loss"][-1], d["epochs"][-1])
-        for label, d in data.items()
-    ]
-    best_acc  = max(r[1] for r in rows)
-    best_loss = min(r[2] for r in rows)
-    col_w = max(len(r[0]) for r in rows)
+def meta_from_filename(path: str) -> dict:
+    """Extract structured metadata (base optimizer, SAM variant, 8-bit flag) from log filename."""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    m = FILENAME_PATTERN.match(stem)
+    if not m:
+        return {}
+    adaptive = bool(m.group("adaptive"))
+    sam_type = m.group("sam_type").lower()
+    optimizer = m.group("optimizer").lower()
+    is_8bit = optimizer.endswith("8bit")
+    base_opt = optimizer[:-4] if is_8bit else optimizer
+    if sam_type in ("none", "standard"):
+        sam_key = "none"
+    elif adaptive:
+        sam_key = "asam"
+    else:
+        sam_key = "sam"
+    return {"base_opt": base_opt, "is_8bit": is_8bit, "sam_key": sam_key}
 
+
+def print_summary_table(data: dict, meta_dict: dict, latex: bool = False) -> None:
     BOLD  = "\033[1m"
     RESET = "\033[0m"
 
-    header = f"{'Method':<{col_w}}  {'Val Acc (%)':>12}  {'Val Loss':>10}  {'Epoch':>6}"
-    sep = "-" * len(header)
-    print("\n" + sep)
-    print(header)
-    print(sep)
-    for label, acc, loss, epoch in rows:
-        acc_str  = f"{acc:12.2f}"
-        loss_str = f"{loss:10.4f}"
-        if acc  == best_acc:
-            acc_str  = BOLD + acc_str  + RESET
-        if loss == best_loss:
-            loss_str = BOLD + loss_str + RESET
-        print(f"{label:<{col_w}}  {acc_str}  {loss_str}  {epoch:>6d}")
-    print(sep + "\n")
+    # Group entries by base optimizer
+    # groups[base_opt][(sam_key, is_8bit)] = (te_acc, te_loss, epoch_count)
+    groups = defaultdict(dict)
+    ungrouped = []
+
+    for label, d in data.items():
+        meta = meta_dict.get(label, {})
+        if not d["te_acc"]:
+            continue
+        entry = (d["te_acc"][-1], d["te_loss"][-1], d["epochs"][-1])
+        if meta and "base_opt" in meta:
+            groups[meta["base_opt"]][(meta["sam_key"], meta["is_8bit"])] = entry
+        else:
+            ungrouped.append((label, *entry))
 
     if latex:
-        print("% LaTeX table (requires \\usepackage{booktabs})")
-        print(r"\begin{tabular}{lrrr}")
+        print("\n% LaTeX table (requires \\usepackage{booktabs})")
+
+    latex_sections = []
+
+    # Print one grouped table per base optimizer (console + optional LaTeX together)
+    for base_opt in ["sgd", "adam", "adamw"]:
+        if base_opt not in groups:
+            continue
+        group = groups[base_opt]
+        long_name, short_name = OPTIMIZER_DISPLAY.get(base_opt, (base_opt.upper(), base_opt.upper()))
+        epochs = [v[2] for v in group.values()]
+        epoch_str = str(max(epochs)) if epochs else "?"
+
+        col_labels = [spec[2].format(opt=short_name) for spec in COLUMN_DEFS]
+        col_keys   = [(spec[0], spec[1]) for spec in COLUMN_DEFS]
+        col_data   = [group.get(k) for k in col_keys]
+
+        avail = [v for v in col_data if v is not None]
+        best_acc  = max(v[0] for v in avail) if avail else None
+        best_loss = min(v[1] for v in avail) if avail else None
+
+        row_hdr_w  = max(len("Validation"), len("Val Acc (%)"))
+        col_widths = [max(len(cl), 8) for cl in col_labels]
+
+        # --- Console table (skipped when --latex is active) ---
+        if not latex:
+            hdr = f"{'Validation':<{row_hdr_w}}"
+            for cl, cw in zip(col_labels, col_widths):
+                hdr += f" | {cl:<{cw}}"
+            sep = "-" * len(hdr)
+            print(f"\n{long_name} - {short_name} ({epoch_str} Epoch)")
+            print(sep)
+            print(hdr)
+            print(sep)
+
+            row = f"{'Val Loss':<{row_hdr_w}}"
+            for v, cw in zip(col_data, col_widths):
+                if v is None:
+                    cell = f"{'N/A':<{cw}}"
+                else:
+                    plain = f"{v[1]:.4f}"
+                    cell  = f"{plain:<{cw}}"
+                    if v[1] == best_loss:
+                        cell = BOLD + cell + RESET
+                row += f" | {cell}"
+            print(row)
+
+            row = f"{'Val Acc (%)':<{row_hdr_w}}"
+            for v, cw in zip(col_data, col_widths):
+                if v is None:
+                    cell = f"{'N/A':<{cw}}"
+                else:
+                    plain = f"{v[0]:.2f}"
+                    cell  = f"{plain:<{cw}}"
+                    if v[0] == best_acc:
+                        cell = BOLD + cell + RESET
+                row += f" | {cell}"
+            print(row)
+            print(sep)
+
+        # Collect rendered LaTeX rows for later (printed as one unified table)
+        if latex:
+            def _fmt_acc(v, _best=best_acc):
+                if v is None:
+                    return r"\text{--}"
+                s = f"{v[0]:.2f}"
+                return f"\\textbf{{{s}}}" if v[0] == _best else s
+
+            def _fmt_loss(v, _best=best_loss):
+                if v is None:
+                    return r"\text{--}"
+                s = f"{v[1]:.4f}"
+                return f"\\textbf{{{s}}}" if v[1] == _best else s
+
+            latex_sections.append({
+                "header":    col_labels,
+                "loss_row":  [_fmt_loss(v) for v in col_data],
+                "acc_row":   [_fmt_acc(v)  for v in col_data],
+                "col_spec":  "l" + "r" * len(col_labels),
+                "caption":   f"{long_name} - {short_name} ({epoch_str} Epoch)",
+            })
+
+    # Print unified LaTeX table (all optimizer groups in one tabular)
+    if latex and latex_sections:
+        col_spec = latex_sections[0]["col_spec"]
+        print(f"\\begin{{tabular}}{{{col_spec}}}")
         print(r"\toprule")
-        print(r"Method & Val Acc (\%) & Val Loss & Epoch \\")
-        print(r"\midrule")
-        for label, acc, loss, epoch in rows:
-            acc_str  = f"\\textbf{{{acc:.2f}}}" if acc  == best_acc  else f"{acc:.2f}"
-            loss_str = f"\\textbf{{{loss:.4f}}}" if loss == best_loss else f"{loss:.4f}"
-            print(f"{label} & {acc_str} & {loss_str} & {epoch} \\\\")
+        for i, sec in enumerate(latex_sections):
+            if i > 0:
+                print(r"\midrule")
+            print(r"\midrule")
+            print(f"Validation & {' & '.join(sec['header'])} \\\\")
+            print(r"\midrule")
+            print("Val Loss & "    + " & ".join(sec["loss_row"]) + r" \\")
+            print(r"Val Acc (\%) & " + " & ".join(sec["acc_row"])  + r" \\")
         print(r"\bottomrule")
-        print(r"\end{tabular}" + "\n")
+        print(r"\end{tabular}")
+
+    # Fallback: print any entries that could not be grouped (console only)
+    if ungrouped and not latex:
+        print("\n(Ungrouped entries):")
+        col_w = max(len(r[0]) for r in ungrouped)
+        header = f"{'Method':<{col_w}}  {'Val Acc (%)':>12}  {'Val Loss':>10}  {'Epoch':>6}"
+        sep = "-" * len(header)
+        best_acc  = max(r[1] for r in ungrouped)
+        best_loss = min(r[2] for r in ungrouped)
+        print(sep); print(header); print(sep)
+        for label, acc, loss, epoch in ungrouped:
+            acc_str  = f"{acc:12.2f}"
+            loss_str = f"{loss:10.4f}"
+            if acc  == best_acc:  acc_str  = BOLD + acc_str  + RESET
+            if loss == best_loss: loss_str = BOLD + loss_str + RESET
+            print(f"{label:<{col_w}}  {acc_str}  {loss_str}  {epoch:>6d}")
+        print(sep)
 
 
 def main():
@@ -124,6 +264,7 @@ def main():
 
     # Load data
     data = {}
+    meta_dict = {}
     for log_path in args.log_files:
         if not os.path.exists(log_path):
             print(f"[warning] log not found: {log_path}", file=sys.stderr)
@@ -134,6 +275,7 @@ def main():
             continue
         label = label_from_filename(log_path)
         data[label] = parsed
+        meta_dict[label] = meta_from_filename(log_path)
 
     if not data:
         print("No data loaded. Exiting.", file=sys.stderr)
@@ -141,15 +283,12 @@ def main():
 
     # Sort labels into preferred display order; unknown labels go at the end.
     LABEL_ORDER = [
-        "SGD (no SAM)",
-        "ADAM (no SAM)",
-        "ADAMW (no SAM)",
-        "SAM (sgd)",
-        "SAM (adam)",
-        "SAM (adamw)",
-        "Adaptive SAM (sgd)",
-        "Adaptive SAM (adam)",
-        "Adaptive SAM (adamw)",
+        "SGD",        "SGD SAM",        "SGD ASAM",
+        "SGD 8Bits",  "SGD SAM 8Bits",  "SGD ASAM 8Bits",
+        "Adam",       "Adam SAM",       "Adam ASAM",
+        "Adam 8Bits", "Adam SAM 8Bits", "Adam ASAM 8Bits",
+        "AdamW",      "AdamW SAM",      "AdamW ASAM",
+        "AdamW 8Bits","AdamW SAM 8Bits","AdamW ASAM 8Bits",
     ]
     def _sort_key(label):
         try:
@@ -204,7 +343,7 @@ def main():
         ax.legend(fontsize=8)
 
     if args.table:
-        print_summary_table(data, latex=args.latex)
+        print_summary_table(data, meta_dict, latex=args.latex)
 
     if args.output:
         plt.savefig(args.output, dpi=150, bbox_inches="tight")
