@@ -1,5 +1,6 @@
 import inspect
-import math 
+import math
+import time
 import torch
 from transformers.optimization import get_cosine_with_min_lr_schedule_with_warmup
 
@@ -7,6 +8,7 @@ from src.data.cifar import CIFAR
 from src.data.tinyImageNet import TinyImageNet
 from .scheduler import LinearScheduler
 from .utils import *
+from .utils import get_system_stats
 from src.model import MODEL_MAP
 
 def get_train_dataset_len(dataloader) -> int:
@@ -177,6 +179,8 @@ def train_one_epoch(
 
     last_lr = None
     last_rho_lr = None
+    total_samples = 0
+    epoch_start = time.perf_counter()
 
     for batch in loader:
         inputs, targets = batch
@@ -218,8 +222,13 @@ def train_one_epoch(
 
             train_loss.update(loss_scalar, inputs.size(0))
             train_acc.update(acc_scalar, inputs.size(0))
+            total_samples += inputs.size(0)
 
-    return train_loss.avg, train_acc.avg, last_lr, last_rho_lr
+    elapsed = time.perf_counter() - epoch_start
+    velocity = total_samples / elapsed if elapsed > 0 else 0.0
+    sys_stats = get_system_stats(device)
+
+    return train_loss.avg, train_acc.avg, last_lr, last_rho_lr, velocity, sys_stats
 
 
 @torch.inference_mode()

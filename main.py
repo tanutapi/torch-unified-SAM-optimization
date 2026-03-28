@@ -24,15 +24,15 @@ def main(args):
     if args.adaptive:
         sam_dir = f"Adaptive_{sam_dir}"
 
-    save_dir = f"src/save/{sam_dir}"
+    save_dir = os.path.join(args.save_root, sam_dir)
     saved_args_path = save_method_aware_args(args, dataset, save_dir=save_dir, include_derived=True)
 
     log_file_name = f"{sam_dir}_{args.optimizer}_{args.arch_type}_{args.dataset}.log"
-    os.makedirs(f"src/save/{sam_dir}/log/", exist_ok=True)
+    os.makedirs(os.path.join(args.save_root, sam_dir, "log"), exist_ok=True)
 
     logger = setup_logger(
         "Sharpness_Aware_Minimization",
-        f"src/save/{sam_dir}/log/{log_file_name}",
+        os.path.join(args.save_root, sam_dir, "log", log_file_name),
         level=logging.INFO,
     )
 
@@ -44,7 +44,7 @@ def main(args):
     loss_fn = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
 
     for epoch in range(args.epochs):
-        tr_loss, tr_acc, bayes_lr, _ = train_one_epoch(
+        tr_loss, tr_acc, bayes_lr, _, velocity, sys_stats = train_one_epoch(
             model=model,
             loader=dataset.train,
             optimizer=optimizer,
@@ -69,14 +69,22 @@ def main(args):
         else:
             lr = args.lr
 
+        cpu_str = f"{sys_stats['cpu_pct']:.1f}%" if sys_stats['cpu_pct'] is not None else "N/A"
+        ram_str = f"{sys_stats['ram_used_gb']:.2f}GB" if sys_stats['ram_used_gb'] is not None else "N/A"
+        gpu_str = f"{sys_stats['gpu_pct']}%" if sys_stats['gpu_pct'] is not None else "N/A"
+        gpu_ram_str = f"{sys_stats['gpu_ram_used_gb']:.2f}GB" if sys_stats['gpu_ram_used_gb'] is not None else "N/A"
+
         logger.info(
             f"Epoch: {epoch+1:03}/{args.epochs} | "
             f"Train Loss: {tr_loss:.4f} | Train Acc: {tr_acc*100:.2f}% | "
             f"Test Loss: {test_loss:.4f} | Test Acc: {test_acc*100:.2f}% | "
-            f"LR: {lr:.4e}"
+            f"LR: {lr:.4e} | "
+            f"Velocity: {velocity:.1f} samp/s | "
+            f"CPU: {cpu_str} | RAM: {ram_str} | "
+            f"GPU: {gpu_str} | GPU RAM: {gpu_ram_str}"
         )
     
-    model_save_path = f"src/save/{sam_dir}/state_dict/{training_type}_{args.arch_type}_{args.dataset}.pth"
+    model_save_path = os.path.join(args.save_root, sam_dir, "state_dict", f"{training_type}_{args.arch_type}_{args.dataset}.pth")
     os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
     torch.save(model.state_dict(), model_save_path)
 
@@ -89,6 +97,7 @@ if __name__ == "__main__":
     # --- General ---
     parser.add_argument("--seed", default=42, type=int, help="Random seed for reproducibility.")
     parser.add_argument("--num_workers", default=8, type=int, help="Number of DataLoader worker processes.")
+    parser.add_argument("--save_root", default="src/save", type=str, help="Root directory for all outputs (logs, weights, args). Set to a Google Drive path on Colab.")
 
     # --- Dataset ---
     parser.add_argument("--dataset", default="cifar10", type=str, choices=["cifar10", "cifar100", "tinyimagenet"], help="Dataset to train/evaluate on.")
@@ -131,8 +140,8 @@ if __name__ == "__main__":
     sam_dir = args.sam_type if args.sam_type is not None else "standard"
     if args.adaptive:
         sam_dir = f"Adaptive_{sam_dir}"
-    os.makedirs(f"src/save/{sam_dir}", exist_ok=True)
-    args_path = f"src/save/{sam_dir}/{sam_dir}_{args.optimizer}_arguments.json"
+    os.makedirs(os.path.join(args.save_root, sam_dir), exist_ok=True)
+    args_path = os.path.join(args.save_root, sam_dir, f"{sam_dir}_{args.optimizer}_arguments.json")
     with open(args_path, "w", encoding="utf-8") as fh:
         json.dump(vars(args), fh, indent=2, sort_keys=True, default=str)
 
