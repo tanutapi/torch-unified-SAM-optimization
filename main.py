@@ -69,10 +69,10 @@ def main(args):
         else:
             lr = args.lr
 
-        cpu_str = f"{sys_stats['cpu_pct']:.1f}%" if sys_stats['cpu_pct'] is not None else "N/A"
-        ram_str = f"{sys_stats['ram_used_gb']:.2f}GB" if sys_stats['ram_used_gb'] is not None else "N/A"
-        gpu_str = f"{sys_stats['gpu_pct']}%" if sys_stats['gpu_pct'] is not None else "N/A"
-        gpu_ram_str = f"{sys_stats['gpu_ram_used_gb']:.2f}GB" if sys_stats['gpu_ram_used_gb'] is not None else "N/A"
+        cpu_str = f"{sys_stats['cpu_pct']:.2f}%" if sys_stats['cpu_pct'] is not None else "N/A"
+        ram_str = f"{sys_stats['ram_used_kb']:.0f}kB" if sys_stats['ram_used_kb'] is not None else "N/A"
+        gpu_str = f"{sys_stats['gpu_pct']:.2f}%" if sys_stats['gpu_pct'] is not None else "N/A"
+        gpu_ram_str = f"{sys_stats['gpu_ram_used_kb']:.0f}kB" if sys_stats['gpu_ram_used_kb'] is not None else "N/A"
 
         logger.info(
             f"Epoch: {epoch+1:03}/{args.epochs} | "

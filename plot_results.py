@@ -35,9 +35,9 @@ LOG_PATTERN = re.compile(
 RESOURCE_PATTERN = re.compile(
     r"Velocity:\s*([\d.]+)\s*samp/s"
     r".*?CPU:\s*([\d.]+|N/A)%"
-    r".*?RAM:\s*([\d.]+|N/A)GB"
+    r".*?RAM:\s*([\d.]+|N/A)kB"
     r".*?GPU:\s*([\d.]+|N/A)%"
-    r".*?GPU RAM:\s*([\d.]+|N/A)GB"
+    r".*?GPU RAM:\s*([\d.]+|N/A)kB"
 )
 
 FILENAME_PATTERN = re.compile(
@@ -73,7 +73,7 @@ def _parse_resource_val(s: str):
 
 def parse_log(path: str) -> dict:
     epochs, tr_loss, tr_acc, te_loss, te_acc = [], [], [], [], []
-    velocity, cpu_pct, ram_gb, gpu_pct, gpu_ram_gb = [], [], [], [], []
+    velocity, cpu_pct, ram_kb, gpu_pct, gpu_ram_kb = [], [], [], [], []
     with open(path) as f:
         for line in f:
             m = LOG_PATTERN.search(line)
@@ -87,14 +87,14 @@ def parse_log(path: str) -> dict:
                 if r:
                     velocity.append(float(r.group(1)))
                     cpu_pct.append(_parse_resource_val(r.group(2)))
-                    ram_gb.append(_parse_resource_val(r.group(3)))
+                    ram_kb.append(_parse_resource_val(r.group(3)))
                     gpu_pct.append(_parse_resource_val(r.group(4)))
-                    gpu_ram_gb.append(_parse_resource_val(r.group(5)))
+                    gpu_ram_kb.append(_parse_resource_val(r.group(5)))
     return {
         "epochs": epochs, "tr_loss": tr_loss, "tr_acc": tr_acc,
         "te_loss": te_loss, "te_acc": te_acc,
-        "velocity": velocity, "cpu_pct": cpu_pct, "ram_gb": ram_gb,
-        "gpu_pct": gpu_pct, "gpu_ram_gb": gpu_ram_gb,
+        "velocity": velocity, "cpu_pct": cpu_pct, "ram_kb": ram_kb,
+        "gpu_pct": gpu_pct, "gpu_ram_kb": gpu_ram_kb,
     }
 
 
@@ -150,7 +150,7 @@ def print_summary_table(data: dict, meta_dict: dict, latex: bool = False) -> Non
         if not d["te_acc"]:
             continue
         avg_vel = sum(d["velocity"]) / len(d["velocity"]) if d["velocity"] else None
-        peak_gpu_ram = max((v for v in d["gpu_ram_gb"] if v is not None), default=None)
+        peak_gpu_ram = max((v for v in d["gpu_ram_kb"] if v is not None), default=None)
         entry = (d["te_acc"][-1], d["te_loss"][-1], d["epochs"][-1], avg_vel, peak_gpu_ram)
         if meta and "base_opt" in meta:
             groups[meta["base_opt"]][(meta["sam_key"], meta["is_8bit"])] = entry
@@ -236,7 +236,7 @@ def print_summary_table(data: dict, meta_dict: dict, latex: bool = False) -> Non
                 if v is None or v[4] is None:
                     cell = f"{'N/A':<{cw}}"
                 else:
-                    plain = f"{v[4]:.2f}GB"
+                    plain = f"{v[4]:.0f}kB"
                     cell  = f"{plain:<{cw}}"
                     if v[4] == best_gpu_ram:
                         cell = BOLD + cell + RESET
@@ -267,7 +267,7 @@ def print_summary_table(data: dict, meta_dict: dict, latex: bool = False) -> Non
             def _fmt_gpu_ram(v, _best=best_gpu_ram):
                 if v is None or v[4] is None:
                     return r"\text{--}"
-                s = f"{v[4]:.2f}"
+                s = f"{v[4]:.0f}"
                 return f"\\textbf{{{s}}}" if v[4] == _best else s
 
             latex_sections.append({
@@ -294,7 +294,7 @@ def print_summary_table(data: dict, meta_dict: dict, latex: bool = False) -> Non
             print("Val Loss & "         + " & ".join(sec["loss_row"]) + r" \\")
             print(r"Val Acc (\%) & "    + " & ".join(sec["acc_row"])  + r" \\")
             print(r"Velocity (samp/s) & " + " & ".join(sec["vel_row"]) + r" \\")
-            print(r"Peak GPU RAM (GB) & " + " & ".join(sec["gpu_row"]) + r" \\")
+            print(r"Peak GPU RAM (kB) & " + " & ".join(sec["gpu_row"]) + r" \\")
         print(r"\bottomrule")
         print(r"\end{tabular}")
 

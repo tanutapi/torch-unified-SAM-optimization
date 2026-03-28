@@ -10,20 +10,20 @@ from src import sam_optim
 
 
 def get_system_stats(device: torch.device) -> dict:
-    """Snapshot CPU%, RAM, GPU%, GPU RAM. Returns None for unavailable metrics."""
+    """Snapshot CPU%, RAM, GPU%, GPU RAM. Memory reported in kB. Returns None for unavailable metrics."""
     try:
         import psutil
         cpu_pct = psutil.cpu_percent(interval=None)
-        ram_used_gb = psutil.virtual_memory().used / 1024 ** 3
+        ram_used_kb = psutil.virtual_memory().used / 1024
     except ImportError:
         cpu_pct = None
-        ram_used_gb = None
+        ram_used_kb = None
 
     gpu_pct = None
-    gpu_ram_used_gb = None
+    gpu_ram_used_kb = None
     if torch.cuda.is_available() and device.type == "cuda":
         idx = device.index if device.index is not None else torch.cuda.current_device()
-        gpu_ram_used_gb = torch.cuda.memory_allocated(idx) / 1024 ** 3
+        gpu_ram_used_kb = torch.cuda.memory_allocated(idx) / 1024
         try:
             import pynvml
             pynvml.nvmlInit()
@@ -34,9 +34,9 @@ def get_system_stats(device: torch.device) -> dict:
 
     return {
         "cpu_pct": cpu_pct,
-        "ram_used_gb": ram_used_gb,
+        "ram_used_kb": ram_used_kb,
         "gpu_pct": gpu_pct,
-        "gpu_ram_used_gb": gpu_ram_used_gb,
+        "gpu_ram_used_kb": gpu_ram_used_kb,
     }
 
 def initialize(seed: int):
