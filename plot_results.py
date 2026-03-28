@@ -31,6 +31,15 @@ LOG_PATTERN = re.compile(
     r"\s*Test Acc:\s*([\d.]+)%"
 )
 
+# Optional extra fields added in newer log format
+RESOURCE_PATTERN = re.compile(
+    r"Velocity:\s*([\d.]+)\s*samp/s"
+    r".*?CPU:\s*([\d.]+|N/A)%"
+    r".*?RAM:\s*([\d.]+|N/A)GB"
+    r".*?GPU:\s*([\d.]+|N/A)%"
+    r".*?GPU RAM:\s*([\d.]+|N/A)GB"
+)
+
 FILENAME_PATTERN = re.compile(
     r"^(?P<adaptive>Adaptive_)?(?P<sam_type>[^_]+)_(?P<optimizer>[^_]+)_(?P<arch_type>.+)_(?P<dataset>[^_]+)$"
 )
@@ -57,8 +66,14 @@ COLUMN_DEFS = [
 ]
 
 
+def _parse_resource_val(s: str):
+    """Return float or None for 'N/A' resource values."""
+    return None if s == "N/A" else float(s)
+
+
 def parse_log(path: str) -> dict:
     epochs, tr_loss, tr_acc, te_loss, te_acc = [], [], [], [], []
+    velocity, cpu_pct, ram_gb, gpu_pct, gpu_ram_gb = [], [], [], [], []
     with open(path) as f:
         for line in f:
             m = LOG_PATTERN.search(line)
@@ -68,8 +83,19 @@ def parse_log(path: str) -> dict:
                 tr_acc.append(float(m.group(3)))
                 te_loss.append(float(m.group(4)))
                 te_acc.append(float(m.group(5)))
-    return {"epochs": epochs, "tr_loss": tr_loss, "tr_acc": tr_acc,
-            "te_loss": te_loss, "te_acc": te_acc}
+                r = RESOURCE_PATTERN.search(line)
+                if r:
+                    velocity.append(float(r.group(1)))
+                    cpu_pct.append(_parse_resource_val(r.group(2)))
+                    ram_gb.append(_parse_resource_val(r.group(3)))
+                    gpu_pct.append(_parse_resource_val(r.group(4)))
+                    gpu_ram_gb.append(_parse_resource_val(r.group(5)))
+    return {
+        "epochs": epochs, "tr_loss": tr_loss, "tr_acc": tr_acc,
+        "te_loss": te_loss, "te_acc": te_acc,
+        "velocity": velocity, "cpu_pct": cpu_pct, "ram_gb": ram_gb,
+        "gpu_pct": gpu_pct, "gpu_ram_gb": gpu_ram_gb,
+    }
 
 
 def label_from_filename(path: str) -> str:
@@ -123,7 +149,9 @@ def print_summary_table(data: dict, meta_dict: dict, latex: bool = False) -> Non
         meta = meta_dict.get(label, {})
         if not d["te_acc"]:
             continue
-        entry = (d["te_acc"][-1], d["te_loss"][-1], d["epochs"][-1])
+        avg_vel = sum(d["velocity"]) / len(d["velocity"]) if d["velocity"] else None
+        peak_gpu_ram = max((v for v in d["gpu_ram_gb"] if v is not None), default=None)
+        entry = (d["te_acc"][-1], d["te_loss"][-1], d["epochs"][-1], avg_vel, peak_gpu_ram)
         if meta and "base_opt" in meta:
             groups[meta["base_opt"]][(meta["sam_key"], meta["is_8bit"])] = entry
         else:
@@ -148,8 +176,10 @@ def print_summary_table(data: dict, meta_dict: dict, latex: bool = False) -> Non
         col_data   = [group.get(k) for k in col_keys]
 
         avail = [v for v in col_data if v is not None]
-        best_acc  = max(v[0] for v in avail) if avail else None
-        best_loss = min(v[1] for v in avail) if avail else None
+        best_acc     = max(v[0] for v in avail) if avail else None
+        best_loss    = min(v[1] for v in avail) if avail else None
+        best_vel     = max((v[3] for v in avail if v[3] is not None), default=None)
+        best_gpu_ram = min((v[4] for v in avail if v[4] is not None), default=None)
 
         row_hdr_w  = max(len("Validation"), len("Val Acc (%)"))
         col_widths = [max(len(cl), 8) for cl in col_labels]
@@ -188,6 +218,30 @@ def print_summary_table(data: dict, meta_dict: dict, latex: bool = False) -> Non
                         cell = BOLD + cell + RESET
                 row += f" | {cell}"
             print(row)
+
+            row = f"{'Velocity (s/s)':<{row_hdr_w}}"
+            for v, cw in zip(col_data, col_widths):
+                if v is None or v[3] is None:
+                    cell = f"{'N/A':<{cw}}"
+                else:
+                    plain = f"{v[3]:.1f}"
+                    cell  = f"{plain:<{cw}}"
+                    if v[3] == best_vel:
+                        cell = BOLD + cell + RESET
+                row += f" | {cell}"
+            print(row)
+
+            row = f"{'Peak GPU RAM':<{row_hdr_w}}"
+            for v, cw in zip(col_data, col_widths):
+                if v is None or v[4] is None:
+                    cell = f"{'N/A':<{cw}}"
+                else:
+                    plain = f"{v[4]:.2f}GB"
+                    cell  = f"{plain:<{cw}}"
+                    if v[4] == best_gpu_ram:
+                        cell = BOLD + cell + RESET
+                row += f" | {cell}"
+            print(row)
             print(sep)
 
         # Collect rendered LaTeX rows for later (printed as one unified table)
@@ -204,10 +258,24 @@ def print_summary_table(data: dict, meta_dict: dict, latex: bool = False) -> Non
                 s = f"{v[1]:.4f}"
                 return f"\\textbf{{{s}}}" if v[1] == _best else s
 
+            def _fmt_vel(v, _best=best_vel):
+                if v is None or v[3] is None:
+                    return r"\text{--}"
+                s = f"{v[3]:.1f}"
+                return f"\\textbf{{{s}}}" if v[3] == _best else s
+
+            def _fmt_gpu_ram(v, _best=best_gpu_ram):
+                if v is None or v[4] is None:
+                    return r"\text{--}"
+                s = f"{v[4]:.2f}"
+                return f"\\textbf{{{s}}}" if v[4] == _best else s
+
             latex_sections.append({
                 "header":    col_labels,
                 "loss_row":  [_fmt_loss(v) for v in col_data],
                 "acc_row":   [_fmt_acc(v)  for v in col_data],
+                "vel_row":   [_fmt_vel(v)  for v in col_data],
+                "gpu_row":   [_fmt_gpu_ram(v) for v in col_data],
                 "col_spec":  "l" + "r" * len(col_labels),
                 "caption":   f"{long_name} - {short_name} ({epoch_str} Epoch)",
             })
@@ -223,8 +291,10 @@ def print_summary_table(data: dict, meta_dict: dict, latex: bool = False) -> Non
             print(r"\midrule")
             print(f"Validation & {' & '.join(sec['header'])} \\\\")
             print(r"\midrule")
-            print("Val Loss & "    + " & ".join(sec["loss_row"]) + r" \\")
-            print(r"Val Acc (\%) & " + " & ".join(sec["acc_row"])  + r" \\")
+            print("Val Loss & "         + " & ".join(sec["loss_row"]) + r" \\")
+            print(r"Val Acc (\%) & "    + " & ".join(sec["acc_row"])  + r" \\")
+            print(r"Velocity (samp/s) & " + " & ".join(sec["vel_row"]) + r" \\")
+            print(r"Peak GPU RAM (GB) & " + " & ".join(sec["gpu_row"]) + r" \\")
         print(r"\bottomrule")
         print(r"\end{tabular}")
 
@@ -309,22 +379,36 @@ def main():
         data_str = ", ".join(sorted(datasets)) if datasets else "unknown"
         title = f"Training Results — {arch_str} on {data_str}"
 
+    # Determine if any log has velocity data
+    has_velocity = any(d["velocity"] for d in data.values())
+
     # Plot
-    fig = plt.figure(figsize=(14, 10))
+    fig = plt.figure(figsize=(14, 14 if has_velocity else 10))
     fig.suptitle(title, fontsize=14, fontweight="bold", y=0.98)
-    gs = gridspec.GridSpec(2, 2, hspace=0.35, wspace=0.3)
-    axes = {
-        "tr_loss": fig.add_subplot(gs[0, 0]),
-        "tr_acc":  fig.add_subplot(gs[0, 1]),
-        "te_loss": fig.add_subplot(gs[1, 0]),
-        "te_acc":  fig.add_subplot(gs[1, 1]),
-    }
+    if has_velocity:
+        gs = gridspec.GridSpec(3, 2, hspace=0.4, wspace=0.3)
+        axes = {
+            "tr_loss":  fig.add_subplot(gs[0, 0]),
+            "tr_acc":   fig.add_subplot(gs[0, 1]),
+            "te_loss":  fig.add_subplot(gs[1, 0]),
+            "te_acc":   fig.add_subplot(gs[1, 1]),
+            "velocity": fig.add_subplot(gs[2, :]),
+        }
+    else:
+        gs = gridspec.GridSpec(2, 2, hspace=0.35, wspace=0.3)
+        axes = {
+            "tr_loss": fig.add_subplot(gs[0, 0]),
+            "tr_acc":  fig.add_subplot(gs[0, 1]),
+            "te_loss": fig.add_subplot(gs[1, 0]),
+            "te_acc":  fig.add_subplot(gs[1, 1]),
+        }
 
     titles = {
-        "tr_loss": "Training Loss",
-        "tr_acc":  "Training Accuracy (%)",
-        "te_loss": "Validation Loss",
-        "te_acc":  "Validation Accuracy (%)",
+        "tr_loss":  "Training Loss",
+        "tr_acc":   "Training Accuracy (%)",
+        "te_loss":  "Validation Loss",
+        "te_acc":   "Validation Accuracy (%)",
+        "velocity": "Training Velocity (samples/sec)",
     }
 
     linestyles = ["-", "--", "-.", ":"]
@@ -334,7 +418,12 @@ def main():
     for label, d in data.items():
         ls = label_styles[label]
         for key, ax in axes.items():
-            ax.plot(d["epochs"], d[key], label=label, linewidth=1.5, linestyle=ls)
+            if key == "velocity":
+                if d["velocity"]:
+                    ax.plot(d["epochs"][:len(d["velocity"])], d["velocity"],
+                            label=label, linewidth=1.5, linestyle=ls)
+            else:
+                ax.plot(d["epochs"], d[key], label=label, linewidth=1.5, linestyle=ls)
 
     for key, ax in axes.items():
         ax.set_title(titles[key], fontsize=11)
