@@ -6,7 +6,18 @@
       "WebSearch",
       "WebFetch(domain:github.com)",
       "Bash(pip install:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(grep -r \"VTAB\\\\|vtab\\\\|visual.task\\\\|tensorflow_datasets\" /Users/tanutapiwong/Projects/torch-unified-SAM-optimization --include=*.py)",
+      "WebFetch(domain:google-research.github.io)",
+      "WebFetch(domain:arxiv.org)",
+      "Bash(python3 -c \"import torchvision; print\\(torchvision.__version__\\); from torchvision.models import vit_b_16, ViT_B_16_Weights; print\\(''ViT available''\\)\")",
+      "Bash(python3 -c \"import torchvision; print\\(torchvision.__version__\\)\")",
+      "Bash(python3 -c \"import torch; print\\(torch.__version__\\)\")",
+      "Bash(pip show:*)",
+      "Bash(conda run:*)"
     ]
   }
 }

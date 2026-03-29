@@ -27,7 +27,8 @@ def main(args):
     save_dir = os.path.join(args.save_root, sam_dir)
     saved_args_path = save_method_aware_args(args, dataset, save_dir=save_dir, include_derived=True)
 
-    log_file_name = f"{sam_dir}_{args.optimizer}_{args.arch_type}_{args.dataset}.log"
+    _dataset_tag = f"vtab1k_{args.vtab_task}" if args.dataset == "vtab1k" and args.vtab_task else args.dataset
+    log_file_name = f"{sam_dir}_{args.optimizer}_{args.arch_type}_{_dataset_tag}.log"
     os.makedirs(os.path.join(args.save_root, sam_dir, "log"), exist_ok=True)
 
     logger = setup_logger(
@@ -100,11 +101,19 @@ if __name__ == "__main__":
     parser.add_argument("--save_root", default="src/save", type=str, help="Root directory for all outputs (logs, weights, args). Set to a Google Drive path on Colab.")
 
     # --- Dataset ---
-    parser.add_argument("--dataset", default="cifar10", type=str, choices=["cifar10", "cifar100", "tinyimagenet"], help="Dataset to train/evaluate on.")
+    parser.add_argument("--dataset", default="cifar10", type=str, choices=["cifar10", "cifar100", "tinyimagenet", "vtab1k"], help="Dataset to train/evaluate on.")
+    parser.add_argument("--vtab_task", default=None, type=str,
+        help="VTAB-1k task name (required when --dataset vtab1k). "
+             "One of: caltech101, cifar100, dtd, eurosat, flowers102, pets, sun397, svhn, "
+             "diabetic_retinopathy, kitti, patch_camelyon, resisc45, clevr_count, clevr_dist, "
+             "dmlab, dsprites_loc, dsprites_ori, smallnorb_azi, smallnorb_ele.")
+    parser.add_argument("--vtab_data_root", default="/dataset/vtab1k", type=str,
+        help="Root directory for VTAB-1k data. Expected layout: {vtab_data_root}/{task}/train/ and {vtab_data_root}/{task}/test/")
 
     # --- Model ---
-    parser.add_argument("--arch_type", default="resnet18", type=str, help="Model architecture name (e.g., resnet18, wideresnet28, pyramidnet).")
+    parser.add_argument("--arch_type", default="resnet18", type=str, help="Model architecture name (e.g., resnet18, wideresnet28, pyramidnet, vit_b_16).")
     parser.add_argument("--dropout", default=0.0, type=float, help="Dropout probability (if supported by the selected architecture).")
+    parser.add_argument("--pretrained", action="store_true", help="Load ImageNet pretrained weights for ViT models and replace the classification head. Ignored for non-ViT architectures.")
 
     # --- Training ---
     parser.add_argument("--epochs", default=200, type=int, help="Total number of training epochs.")
@@ -136,6 +145,9 @@ if __name__ == "__main__":
     parser.add_argument("--sigma", default=1.0, type=float, help="FriendlySAM: smoothing/noise scale (method-specific).")
     parser.add_argument("--lmbda", default=0.9, type=float, help="FriendlySAM: EMA/decay-style coefficient (method-specific).")
     args = parser.parse_args()
+
+    if args.dataset == "vtab1k" and args.vtab_task is None:
+        parser.error("--vtab_task is required when --dataset is vtab1k")
 
     sam_dir = args.sam_type if args.sam_type is not None else "standard"
     if args.adaptive:

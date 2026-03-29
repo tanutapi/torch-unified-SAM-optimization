@@ -6,6 +6,7 @@ from transformers.optimization import get_cosine_with_min_lr_schedule_with_warmu
 
 from src.data.cifar import CIFAR
 from src.data.tinyImageNet import TinyImageNet
+from src.data.vtab1k import VTAB1k
 from .scheduler import LinearScheduler
 from .utils import *
 from .utils import get_system_stats
@@ -22,6 +23,10 @@ def get_train_dataset_len(dataloader) -> int:
 
 
 def build_dataset(args):
+    if args.dataset == "vtab1k":
+        dataset = VTAB1k(args.vtab_task, args.vtab_data_root, args.batch_size, args.num_workers)
+        return dataset, dataset.num_classes
+
     dataset_map = {
         "cifar10": (CIFAR, 10),
         "cifar100": (CIFAR, 100),
@@ -38,15 +43,20 @@ def build_dataset(args):
 
 
 def build_model(args, num_classes: int, device: torch.device):
-
     model_class = MODEL_MAP[args.arch_type]
-    if "wide" in args.arch_type:
+
+    if args.arch_type.startswith("vit"):
+        pretrained = getattr(args, "pretrained", False)
+        model = model_class(num_classes=num_classes, pretrained=pretrained).to(device)
+    elif "wide" in args.arch_type:
         model = model_class(num_classes=num_classes).to(device)
     elif "resnet" in args.arch_type:
         model = model_class(num_classes=num_classes, dropout_rate=args.dropout).to(device)
     elif args.arch_type == "pyramidnet":
         model = model_class(110, 270, num_classes).to(device)
-        
+    else:
+        raise ValueError(f"Unknown arch_type: {args.arch_type!r}")
+
     return model
 
 
